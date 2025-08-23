@@ -11,12 +11,23 @@
   "navigation": {
     "tabs": [
       {
-        "tab": "文章",
+        "tab": "Guides",
         "groups": [
           {
-            "group": "介绍",
+            "group": "Getting started",
             "pages": [
-              "/index"
+              "index",
+              "quickstart",
+              "development"
+            ]
+          },
+          {
+            "group": "Study Room System",
+            "pages": [
+              "study-room/index",
+              "study-room/tech-stack",
+              "study-room/database",
+              "study-room/requirements"
             ]
           },
           {
@@ -44,8 +55,28 @@
             ]
           }
         ]
+      },
+      {
+        "tab": "API reference",
+        "groups": [
+          {
+            "group": "API documentation",
+            "pages": [
+              "api-reference/introduction",
+              "api-reference/study-room-api"
+            ]
+          },
+          {
+            "group": "Endpoint examples",
+            "pages": [
+              "api-reference/endpoint/get",
+              "api-reference/endpoint/create",
+              "api-reference/endpoint/delete",
+              "api-reference/endpoint/webhook"
+            ]
+          }
+        ]
       }
-
     ],
     "global": {
       "anchors": [
@@ -77,7 +108,12 @@
         "label": "Support",
         "href": "mailto:hi@mintlify.com"
       }
-    ]
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Dashboard",
+      "href": "https://dashboard.mintlify.com"
+    }
   },
   "contextual": {
     "options": [
@@ -93,7 +129,9 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/cokice"
+      "x": "https://x.com/mintlify",
+      "github": "https://github.com/mintlify",
+      "linkedin": "https://linkedin.com/company/mintlify"
     }
   }
 }
