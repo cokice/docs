@@ -1,6 +1,7 @@
 ---
 title: "安装与环境"
 description: "在 Windows/macOS/Linux 与 Docker 快速安装 MySQL 并连接"
+icon: "server"
 ---
 
 本节介绍如何在不同平台安装并启动 MySQL 8，以及如何创建用户、初始化示例数据库与常用连接方式。
@@ -90,4 +91,3 @@ FLUSH PRIVILEGES;
 - 无法连接：检查端口、防火墙；容器映射是否为 `-p 3306:3306`
 - 权限不足：确认 `GRANT` 的库/表范围与来源主机匹配（如 `%`、`localhost`）
 - 字符集：推荐库/表使用 `utf8mb4` 及合适的排序规则（如 `utf8mb4_0900_ai_ci`）
-

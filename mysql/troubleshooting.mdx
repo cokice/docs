@@ -1,6 +1,7 @@
 ---
 title: "故障排查"
 description: "连接失败、权限问题、锁等待、死锁、内存与连接数等常见错误定位"
+icon: "wrench"
 ---
 
 汇总 MySQL 常见错误与快速定位思路，帮助你更高效地解题。
@@ -43,4 +44,3 @@ SELECT * FROM performance_schema.data_locks; -- 8.0 锁详情
 ## 小结
 
 遇到问题先观测：日志、`SHOW ...`、`performance_schema`，再定位根因，最后验证修复。
-

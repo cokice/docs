@@ -1,6 +1,7 @@
 ---
 title: "备份与恢复"
 description: "mysqldump、一致性快照、二进制日志增量与点时间恢复"
+icon: "rotate-ccw"
 ---
 
 备份分为逻辑备份（`mysqldump`）与物理备份（拷贝数据文件/专业工具）。本节以逻辑备份为主，介绍一致性快照与增量恢复思路。
@@ -61,4 +62,3 @@ mysqldump shop users products > shop_users_products.sql
 ## 小结
 
 建立“全量 + binlog 增量”的策略并定期演练，才能保证可靠恢复。
-

@@ -1,6 +1,7 @@
 ---
 title: "事务与锁"
 description: "ACID、隔离级别、InnoDB 锁、死锁诊断与最佳实践"
+icon: "lock"
 ---
 
 事务保证数据一致性，但也可能带来锁竞争。本节解释 MySQL 事务模型、隔离级别与常见锁问题的诊断与规避。
@@ -65,4 +66,3 @@ SELECT * FROM performance_schema.events_transactions_current;
 ## 小结
 
 理解隔离级别与锁行为，能有效减少并发冲突与死锁。下一步前往“备份与恢复”。
-

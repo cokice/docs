@@ -20,6 +20,12 @@
             ]
           },
           {
+            "group": "Deep Research",
+            "pages": [
+              "Deep Research/China Japan US Living Costs"
+            ]
+          },
+          {
             "group": "MySQL 教程",
             "pages": [
               "mysql/intro",
@@ -34,13 +40,8 @@
               "mysql/troubleshooting",
               "mysql/cheatsheet"
             ]
-          },
-          {
-            "group": "deep research",
-            "pages": [
-              "deep research/China Japan US Living Costs"
-            ]
           }
+          
         ]
       }
     ]   

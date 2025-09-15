@@ -1,4 +1,25 @@
 export const CNUrbanRuralBars = () => {
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    try {
+      const byClass = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+      const mq = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+      setIsDark(byClass || (mq ? mq.matches : false));
+      if (mq) {
+        const onChange = (e) => setIsDark(e.matches);
+        mq.addEventListener('change', onChange);
+        return () => mq.removeEventListener('change', onChange);
+      }
+    } catch (_) {}
+  }, []);
+
+  const ui = {
+    border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.08)',
+    text: isDark ? '#E5E7EB' : '#111827',
+    subtext: isDark ? '#9CA3AF' : '#374151',
+    track: isDark ? 'rgba(255,255,255,0.16)' : '#F3F4F6',
+    dash: isDark ? 'rgba(255,255,255,0.25)' : '#E5E7EB',
+  };
   const data = [
     { label: '食品', urban: 28.8, rural: 32.3 },
     { label: '居住', urban: 23.2, rural: 19.7 },
@@ -11,15 +32,15 @@ export const CNUrbanRuralBars = () => {
   ];
 
   const Bar = ({ value, color }) => (
-    <div style={{ position: 'relative', height: 18, background: '#F3F4F6', borderRadius: 9999, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', height: 18, background: ui.track, borderRadius: 9999, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0, width: `${value}%`, background: color, borderRadius: 9999 }} />
-      <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 12, fontWeight: 700, color: '#111827' }}>{value.toFixed(1)}%</span>
+      <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 12, fontWeight: 700, color: ui.text }}>{value.toFixed(1)}%</span>
     </div>
   );
 
   return (
-    <div className="not-prose" style={{ border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 12 }}>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 8, color: '#374151', fontSize: 12 }}>
+    <div className="not-prose" style={{ border: ui.border, borderRadius: 12, padding: 12 }}>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 8, color: ui.subtext, fontSize: 12 }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <span style={{ width: 12, height: 12, background: '#16A34A', borderRadius: 2, display: 'inline-block' }} />
           城镇（%）
@@ -30,15 +51,15 @@ export const CNUrbanRuralBars = () => {
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr', gap: 12, color: '#111827', fontSize: 14, fontWeight: 600, padding: '4px 0' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr', gap: 12, color: ui.text, fontSize: 14, fontWeight: 600, padding: '4px 0' }}>
         <div></div>
-        <div style={{ color: '#6B7280', fontSize: 12, fontWeight: 500 }}>城镇</div>
-        <div style={{ color: '#6B7280', fontSize: 12, fontWeight: 500 }}>农村</div>
+        <div style={{ color: ui.subtext, fontSize: 12, fontWeight: 500 }}>城镇</div>
+        <div style={{ color: ui.subtext, fontSize: 12, fontWeight: 500 }}>农村</div>
       </div>
 
       {data.map((row) => (
-        <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr', gap: 12, alignItems: 'center', padding: '8px 0', borderTop: '1px dashed #E5E7EB' }}>
-          <div style={{ fontWeight: 600 }}>{row.label}</div>
+        <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr', gap: 12, alignItems: 'center', padding: '8px 0', borderTop: `1px dashed ${ui.dash}` }}>
+          <div style={{ fontWeight: 600, color: ui.text }}>{row.label}</div>
           <Bar value={row.urban} color="#16A34A" />
           <Bar value={row.rural} color="#07C983" />
         </div>
@@ -46,4 +67,3 @@ export const CNUrbanRuralBars = () => {
     </div>
   );
 };
-
