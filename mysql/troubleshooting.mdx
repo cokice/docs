@@ -1,0 +1,46 @@
+---
+title: "故障排查"
+description: "连接失败、权限问题、锁等待、死锁、内存与连接数等常见错误定位"
+---
+
+汇总 MySQL 常见错误与快速定位思路，帮助你更高效地解题。
+
+## 连接失败
+
+- `ERROR 1045 (28000): Access denied`：用户名/密码/来源主机不匹配，`SHOW GRANTS FOR 'user'@'host'` 检查授权
+- `Can't connect to MySQL server (10061/2003)`：服务未启动/端口被占用/防火墙拦截
+
+## 权限问题
+
+```sql
+SHOW GRANTS FOR 'app'@'%';
+-- 如授权无效，执行 FLUSH PRIVILEGES 或重新 GRANT
+```
+
+## 锁等待与死锁
+
+```sql
+SHOW PROCESSLIST; -- 查活跃会话
+SHOW ENGINE INNODB STATUS; -- 查看死锁与等待信息
+SELECT * FROM performance_schema.data_locks; -- 8.0 锁详情
+```
+
+缓解：缩短事务、减少范围更新、对热点查询/更新加索引、保持更新顺序一致。
+
+## 连接数与资源
+
+- `Too many connections`：提升 `max_connections`，同时使用连接池与合理超时
+- `Out of memory`：检查 `innodb_buffer_pool_size`、大查询/排序导致的临时内存
+
+## 字符集与乱码
+
+确保客户端与服务器均为 `utf8mb4`，并统一排序规则。
+
+## 大事务与回滚慢
+
+避免大批量单事务；分批提交，每批控制在数千行以内。
+
+## 小结
+
+遇到问题先观测：日志、`SHOW ...`、`performance_schema`，再定位根因，最后验证修复。
+

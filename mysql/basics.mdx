@@ -1,0 +1,92 @@
+---
+title: "SQL 基础"
+description: "数据库/表、数据类型，SELECT/INSERT/UPDATE/DELETE 常用语法"
+---
+
+掌握基础 SQL 是使用 MySQL 的第一步。本节覆盖数据库与表的创建、常见数据类型、增删改查与基本筛选排序。
+
+## 库与表
+
+```sql
+-- 创建/删除数据库
+CREATE DATABASE IF NOT EXISTS demo DEFAULT CHARACTER SET utf8mb4;
+DROP DATABASE IF EXISTS demo;
+
+-- 选择数据库
+USE shop;
+
+-- 创建表（示例）
+CREATE TABLE categories (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(100) NOT NULL UNIQUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+```
+
+## 常见数据类型
+
+- 数值：`TINYINT/INT/BIGINT`，定点数 `DECIMAL(p,s)`；避免货币使用 `FLOAT/DOUBLE`
+- 字符串：`CHAR(n)` 固定长度、`VARCHAR(n)` 变长；文本 `TEXT` 系列
+- 日期时间：`DATE/TIME/DATETIME/TIMESTAMP`；`TIMESTAMP` 有时区相关行为
+- 布尔：`BOOLEAN` 为 `TINYINT(1)` 的别名
+
+## 插入与查询
+
+```sql
+-- 插入
+INSERT INTO products (name, price, stock) VALUES
+('iPhone 15', 5999.00, 5),
+('Kindle', 899.00, 12);
+
+-- 基础查询
+SELECT id, name, price FROM products;
+
+-- 过滤、排序、分页
+SELECT * FROM products
+WHERE price >= 1000 AND name LIKE '%i%'
+ORDER BY price DESC, id ASC
+LIMIT 10 OFFSET 0;
+```
+
+## 更新与删除
+
+```sql
+-- 更新
+UPDATE products SET stock = stock - 1 WHERE id = 1;
+
+-- 删除
+DELETE FROM products WHERE id = 2;
+```
+
+<Warning>
+谨慎执行无 WHERE 的 `UPDATE/DELETE`，可先用 `SELECT` 验证命中范围。
+</Warning>
+
+## 聚合与分组
+
+```sql
+SELECT COUNT(*) AS cnt, MIN(price) AS minp, MAX(price) AS maxp
+FROM products;
+
+SELECT name, COUNT(*) AS n
+FROM products
+GROUP BY name
+HAVING COUNT(*) > 1
+ORDER BY n DESC;
+```
+
+## 简单 JOIN
+
+```sql
+-- 用户与订单数
+SELECT u.id, u.name, COUNT(o.id) AS orders
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+GROUP BY u.id, u.name
+ORDER BY orders DESC;
+```
+
+## 小结
+
+到此已掌握 CRUD、过滤、排序与分组。下一步前往“表设计与索引”。
+

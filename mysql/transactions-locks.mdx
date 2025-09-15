@@ -1,0 +1,68 @@
+---
+title: "事务与锁"
+description: "ACID、隔离级别、InnoDB 锁、死锁诊断与最佳实践"
+---
+
+事务保证数据一致性，但也可能带来锁竞争。本节解释 MySQL 事务模型、隔离级别与常见锁问题的诊断与规避。
+
+## 事务基础
+
+```sql
+SET autocommit = 0; -- 推荐显式控制
+START TRANSACTION;  -- 或 BEGIN
+-- 一系列读写
+COMMIT;             -- 或 ROLLBACK
+```
+
+ACID 与隔离级别：
+
+- READ UNCOMMITTED：可能脏读（不推荐）
+- READ COMMITTED：常见于其他数据库
+- REPEATABLE READ（默认）：快照读，防止不可重复读
+- SERIALIZABLE：最强隔离，但并发差
+
+查看与设置隔离级别：
+
+```sql
+SHOW VARIABLES LIKE 'transaction_isolation';
+SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+```
+
+## 锁类型（InnoDB）
+
+- 行锁：记录锁（Record Lock）、间隙锁（Gap Lock）、临键锁（Next-Key Lock）
+- 表锁：`LOCK TABLES` 或 DDL 导致的隐式表锁
+- 共享锁（S）与排他锁（X）；`SELECT ... FOR UPDATE`、`LOCK IN SHARE MODE`
+
+```sql
+-- 锁定将被更新的行（避免丢失更新）
+SELECT * FROM products WHERE id = 1 FOR UPDATE;
+UPDATE products SET stock = stock - 1 WHERE id = 1;
+```
+
+## 死锁与排查
+
+症状：`ERROR 1213 (40001): Deadlock found ...` 或 `Lock wait timeout exceeded`。
+
+```sql
+SHOW ENGINE INNODB STATUS; -- 观察死锁最新记录
+
+-- performance_schema 辅助（8.0+）
+SELECT * FROM performance_schema.data_locks;       
+SELECT * FROM performance_schema.events_transactions_current;
+```
+
+规避建议：
+
+- 保持一致的更新顺序；缩短事务时间，避免长事务
+- 合理建立索引减少锁定范围；批量写分批提交
+- 锁定读（`FOR UPDATE`）在必要时使用
+
+## 幻读与间隙锁
+
+在 REPEATABLE READ 下，范围更新可能触发间隙锁，阻止范围内的插入从而避免幻读。需要注意锁竞争风险。
+
+## 小结
+
+理解隔离级别与锁行为，能有效减少并发冲突与死锁。下一步前往“备份与恢复”。
+

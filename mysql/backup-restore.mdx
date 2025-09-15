@@ -1,0 +1,64 @@
+---
+title: "备份与恢复"
+description: "mysqldump、一致性快照、二进制日志增量与点时间恢复"
+---
+
+备份分为逻辑备份（`mysqldump`）与物理备份（拷贝数据文件/专业工具）。本节以逻辑备份为主，介绍一致性快照与增量恢复思路。
+
+## 全量逻辑备份（在线）
+
+```bash
+mysqldump -h 127.0.0.1 -P 3306 -u root -p \
+  --single-transaction --routines --triggers --events \
+  --databases shop > shop_$(date +%F).sql
+```
+
+- `--single-transaction`：InnoDB 在线一致性快照（避免锁表）
+- `--routines/--triggers/--events`：包含对象
+
+## 恢复
+
+```bash
+mysql -h 127.0.0.1 -P 3306 -u root -p < shop_2024-01-10.sql
+```
+
+## 二进制日志与增量
+
+启用 `binlog` 后，可进行点时间恢复（PITR）：
+
+1. 恢复最近一次全量
+2. 从全量时间点开始回放 binlog 至目标时刻
+
+```bash
+mysqlbinlog --start-datetime="2024-01-10 09:00:00" \
+  --stop-datetime="2024-01-10 09:30:00" \
+  /var/lib/mysql/binlog.000123 | mysql -u root -p
+```
+
+<Warning>
+PITR 对时间精度与服务器时区敏感；强烈建议定期演练恢复流程。
+</Warning>
+
+## 导入导出片段
+
+```bash
+-- 仅导出表结构
+mysqldump -d shop > schema.sql
+
+-- 仅导出数据
+mysqldump -t shop > data.sql
+
+-- 只导出部分表
+mysqldump shop users products > shop_users_products.sql
+```
+
+## 常见问题
+
+- 锁表：MyISAM 或显式锁可能导致备份等待；建议使用 InnoDB + `--single-transaction`
+- 大文件：使用管道压缩 `| gzip > backup.sql.gz`
+- 字符集：注意 `--default-character-set=utf8mb4`
+
+## 小结
+
+建立“全量 + binlog 增量”的策略并定期演练，才能保证可靠恢复。
+

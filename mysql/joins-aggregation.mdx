@@ -1,0 +1,79 @@
+---
+title: "连接与聚合"
+description: "INNER/LEFT/RIGHT JOIN、子查询、CTE、窗口函数与常见用法"
+---
+
+本节介绍多表连接、聚合分析与更进阶的查询技巧（CTE 与窗口函数）。
+
+## 多表连接
+
+```sql
+-- 用户最近一笔订单金额
+SELECT u.id, u.name, o.total
+FROM users u
+JOIN orders o ON o.user_id = u.id
+WHERE o.created_at = (
+  SELECT MAX(created_at) FROM orders WHERE user_id = u.id
+);
+
+-- 统计每个用户订单数（含 0）
+SELECT u.id, u.name, COUNT(o.id) AS order_cnt
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+GROUP BY u.id, u.name
+ORDER BY order_cnt DESC;
+```
+
+## 子查询与 EXISTS
+
+```sql
+-- 查询购买过 iPhone 的用户
+SELECT * FROM users u
+WHERE EXISTS (
+  SELECT 1
+  FROM orders o JOIN order_items oi ON oi.order_id = o.id
+  JOIN products p ON p.id = oi.product_id
+  WHERE o.user_id = u.id AND p.name = 'iPhone 15'
+);
+
+-- 与 IN 对比（结果等价，性能依赖执行计划）
+SELECT * FROM users WHERE id IN (
+  SELECT user_id FROM orders
+);
+```
+
+## CTE（WITH）与可读性
+
+```sql
+WITH recent_orders AS (
+  SELECT o.*,
+         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) rn
+  FROM orders o
+)
+SELECT user_id, id AS recent_order_id, total
+FROM recent_orders WHERE rn = 1;
+```
+
+## 窗口函数（8.0+）
+
+```sql
+-- 计算每个用户的累计消费
+SELECT user_id,
+       id AS order_id,
+       total,
+       SUM(total) OVER (PARTITION BY user_id ORDER BY created_at) AS running_total
+FROM orders;
+```
+
+## ROLLUP（小计/合计）
+
+```sql
+SELECT user_id, status, SUM(total) AS amount
+FROM orders
+GROUP BY user_id, status WITH ROLLUP;
+```
+
+## 小结
+
+掌握连接、子查询、CTE 与窗口函数能显著提升查询表达力。下一步前往“事务与锁”。
+

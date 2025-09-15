@@ -1,0 +1,93 @@
+---
+title: "安装与环境"
+description: "在 Windows/macOS/Linux 与 Docker 快速安装 MySQL 并连接"
+---
+
+本节介绍如何在不同平台安装并启动 MySQL 8，以及如何创建用户、初始化示例数据库与常用连接方式。
+
+## 版本建议
+
+- 推荐使用 MySQL 8.0+（InnoDB 优化、窗口函数、CTE、`EXPLAIN ANALYZE` 等特性）
+- 若需与旧系统兼容，可安装 5.7，但不建议新项目使用
+
+## 安装方式
+
+### Windows（MySQL Installer）
+
+1. 访问 https://dev.mysql.com/downloads/installer/
+2. 选择 `MySQL Installer`，勾选 `MySQL Server` 与 `MySQL Workbench`
+3. 安装向导设置 root 密码，记下安装目录与数据目录
+
+服务管理：
+
+```powershell
+sc query MySQL80
+net start MySQL80
+net stop MySQL80
+```
+
+### macOS（Homebrew）
+
+```bash
+brew install mysql
+brew services start mysql
+# 停止服务：brew services stop mysql
+```
+
+### Linux（APT 为例）
+
+```bash
+sudo apt update
+sudo apt install mysql-server -y
+sudo systemctl status mysql
+sudo systemctl start mysql
+```
+
+### Docker（推荐快速试用）
+
+```bash
+docker run -d \
+  --name mysql8 \
+  -e MYSQL_ROOT_PASSWORD=secret \
+  -e MYSQL_DATABASE=shop \
+  -p 3306:3306 \
+  mysql:8.0
+```
+
+## 连接方式
+
+命令行客户端：
+
+```bash
+mysql -h 127.0.0.1 -P 3306 -u root -p
+```
+
+常见 GUI：MySQL Workbench / TablePlus / DBeaver（选择 `Standard TCP/IP`，端口 3306）
+
+## 初始安全设置（生产环境）
+
+```sql
+-- 修改 root 密码（如通过包管理器安装后未设）
+ALTER USER 'root'@'localhost' IDENTIFIED BY 'Stronger#Passw0rd';
+
+-- 创建业务账号（最小权限原则）
+CREATE USER 'app'@'%' IDENTIFIED BY 'App#Passw0rd';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, LOCK TABLES
+ON shop.* TO 'app'@'%';
+FLUSH PRIVILEGES;
+```
+
+<Warning>
+避免直接对外暴露 `root`。生产环境请限制来源 IP、启用强密码策略，并考虑开启 TLS 连接。
+</Warning>
+
+## 初始化示例库
+
+使用“概述”页提供的 `shop` 示例建表语句，或在 Docker 启动时通过 `-e MYSQL_DATABASE=shop` 初始化库。
+
+## 常见问题
+
+- 无法连接：检查端口、防火墙；容器映射是否为 `-p 3306:3306`
+- 权限不足：确认 `GRANT` 的库/表范围与来源主机匹配（如 `%`、`localhost`）
+- 字符集：推荐库/表使用 `utf8mb4` 及合适的排序规则（如 `utf8mb4_0900_ai_ci`）
+

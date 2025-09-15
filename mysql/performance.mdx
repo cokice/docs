@@ -1,0 +1,48 @@
+---
+title: "性能优化"
+description: "慢查询定位、执行计划、索引与 SQL 重写、关键配置与观测"
+---
+
+性能优化的核心是“度量-诊断-验证”。本节从慢查询日志、`EXPLAIN/ANALYZE`、索引与 SQL 重写、关键配置入手给出系统化方法。
+
+## 定位慢查询
+
+```sql
+-- 开启慢查询日志（示例）
+SET GLOBAL slow_query_log = ON;
+SET GLOBAL long_query_time = 0.5; -- 超过 0.5s 记为慢
+```
+
+分析工具：`mysqldumpslow`、`pt-query-digest`（Percona）
+
+## 执行计划与验证
+
+```sql
+EXPLAIN SELECT ...;
+EXPLAIN ANALYZE SELECT ...; -- 8.0+ 返回实际耗时与行数
+```
+
+关注：访问类型（`type`）、命中索引（`key`）、扫描行数（`rows`）、排序/临时（`Extra`）
+
+## 索引与 SQL 重写
+
+- 尽量避免 `SELECT *`，明确需要的列，争取覆盖索引
+- 合理的复合索引顺序：高选择性列优先；与 WHERE、JOIN、ORDER BY 对齐
+- 使用等值连接优先于子查询；必要时用 `EXISTS` 替代 `IN`
+- 分页优化：`WHERE id > ? ORDER BY id LIMIT n` 而非 `OFFSET`
+
+## 关键配置（示例）
+
+- `innodb_buffer_pool_size`：一般设为物理内存的 50%~70%
+- `innodb_flush_log_at_trx_commit`：`1` 强一致，`2`/`0` 性能更好但有丢数风险
+- `max_connections`：结合连接池使用，避免过大导致上下文切换
+
+## 观测与统计
+
+- `performance_schema` + `sys` schema：方便查看热点表/索引、语句摘要
+- 定期 `ANALYZE TABLE` 更新统计信息
+
+## 小结
+
+优化建立在度量与验证之上，借助慢日志、`EXPLAIN ANALYZE` 与合理索引能快速见效。
+

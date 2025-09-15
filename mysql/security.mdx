@@ -1,0 +1,47 @@
+---
+title: "安全与权限"
+description: "用户、角色、GRANT/REVOKE、最小权限、网络加密与合规建议"
+---
+
+安全从账户、权限与网络三方面入手。本节介绍创建用户、分配最小权限与常见安全配置。
+
+## 用户与角色
+
+```sql
+-- 创建用户（限制来源主机）
+CREATE USER 'report'@'10.%' IDENTIFIED BY 'Strong#Pwd1';
+
+-- 角色（8.0+）
+CREATE ROLE 'role_readonly';
+GRANT SELECT ON shop.* TO 'role_readonly';
+GRANT 'role_readonly' TO 'report'@'10.%';
+SET DEFAULT ROLE 'role_readonly' FOR 'report'@'10.%';
+```
+
+## 权限分配
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON shop.* TO 'app'@'%';
+REVOKE DELETE ON shop.* FROM 'app'@'%';
+SHOW GRANTS FOR 'app'@'%';
+```
+
+<Warning>
+避免授予 `SUPER`、`FILE` 等高危权限；谨慎使用 `WITH GRANT OPTION`。
+</Warning>
+
+## 网络与加密
+
+- 仅暴露必要端口，后端私网访问优先
+- 开启 TLS：配置 `ssl_ca`/`ssl_cert`/`ssl_key`，客户端使用 `--ssl-mode=REQUIRED`
+- 参数 `secure_file_priv` 限制导入导出目录，避免任意文件读写
+
+## 审计与合规
+
+- 开启密码策略与过期策略；定期轮换
+- 审计插件/云厂商审计服务记录关键操作
+
+## 小结
+
+遵循“默认拒绝、最小权限、分层防护”的原则建立安全基线。
+

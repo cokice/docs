@@ -1,0 +1,78 @@
+---
+title: "MySQL 教程：概述"
+description: "学习目标、适用场景与学习路径概览"
+---
+
+MySQL 是最流行的开源关系型数据库之一，具备高性能、低成本、生态完善等优势。本教程面向初学者与进阶工程师，覆盖从安装、基础 SQL 到事务、索引、备份恢复、性能优化与安全的完整路径。
+
+<Info>
+示例命令与 SQL 语句保持英文原文（如 `mysql`, `mysqldump`），正文提供中文解释，方便复制粘贴。
+</Info>
+
+## 你将学到
+
+- 安装与连接：Windows/macOS/Linux 或 Docker 快速运行 MySQL
+- 基础 SQL：库/表/数据类型，`SELECT/INSERT/UPDATE/DELETE` 常用写法
+- 表设计与索引：主键/外键、联合索引、覆盖索引、`EXPLAIN`
+- 查询进阶：连接（JOIN）、子查询、聚合（`GROUP BY/HAVING`）
+- 事务与锁：ACID、隔离级别、死锁排查、`START TRANSACTION`
+- 备份与恢复：`mysqldump`、二进制日志、PITR 思路
+- 性能优化：慢查询定位、索引设计、配置优化与观测
+- 安全与权限：`CREATE USER`、`GRANT`、最小权限实践
+
+## 示例数据库
+
+```sql
+CREATE DATABASE IF NOT EXISTS shop;
+USE shop;
+
+CREATE TABLE users (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(100) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE products (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(200) NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  stock INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_price (price)
+) ENGINE=InnoDB;
+
+CREATE TABLE orders (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  total DECIMAL(10,2) NOT NULL,
+  status ENUM('CREATED','PAID','CANCELLED') NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE order_items (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  order_id BIGINT NOT NULL,
+  product_id BIGINT NOT NULL,
+  quantity INT NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (order_id) REFERENCES orders(id),
+  FOREIGN KEY (product_id) REFERENCES products(id),
+  KEY idx_order (order_id),
+  KEY idx_product (product_id)
+) ENGINE=InnoDB;
+```
+
+## 学习路径
+
+1. 安装与环境（/mysql/install）
+2. SQL 基础（/mysql/basics）
+3. 表设计与索引（/mysql/schema-index）
+4. 连接与聚合（/mysql/joins-aggregation）
+5. 事务与锁（/mysql/transactions-locks）
+6. 备份与恢复（/mysql/backup-restore）
+7. 性能优化（/mysql/performance）
+8. 安全与权限（/mysql/security）
+9. 故障排查（/mysql/troubleshooting）
+

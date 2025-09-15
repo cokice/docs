@@ -1,0 +1,65 @@
+---
+title: "表设计与索引"
+description: "范式与反范式、主外键、索引类型、复合索引与 EXPLAIN"
+---
+
+良好的表设计与索引策略是高性能的基础。本节涵盖主外键、常见索引类型、复合索引顺序、覆盖索引与 `EXPLAIN` 使用。
+
+## 设计原则
+
+- 合理范式：避免重复数据与更新异常；读多写少的场景可适度反范式
+- 主键选择：推荐自增 `BIGINT` 或有序 UUID（如 ULID）；保证短且单调更友好
+- 外键：InnoDB 支持外键约束，但高并发写场景可用应用层保证一致性
+
+## 索引类型
+
+- B-Tree 索引：默认，支持前缀匹配
+- 唯一索引：保证唯一性
+- 复合索引：多个列组成，顺序极其重要
+- 覆盖索引：查询列完全由索引覆盖，减少回表
+
+```sql
+-- 唯一与普通索引
+CREATE UNIQUE INDEX ux_users_email ON users(email);
+CREATE INDEX idx_products_price ON products(price);
+
+-- 复合索引顺序（高选择性列在前）
+CREATE INDEX idx_orders_user_status ON orders(user_id, status);
+```
+
+## 索引生效规则（简要）
+
+- 左前缀原则：`(a,b,c)` 的索引可用于 `a`、`a,b`、`a,b,c`
+- 范围条件停止匹配：`a= ? AND b> ? AND c= ?` 中 `c` 通常无法利用
+- 函数/表达式包裹列、不同字符集/排序规则可能导致索引失效
+
+## EXPLAIN 与诊断
+
+```sql
+EXPLAIN SELECT * FROM products WHERE price BETWEEN 100 AND 500 ORDER BY price LIMIT 20;
+EXPLAIN ANALYZE SELECT * FROM products WHERE name LIKE 'iPhone%'; -- 8.0+
+```
+
+关键字段：
+
+- `type`: 访问类型（`ALL` 全表扫描、`range`、`ref`、`const` 等）
+- `key`: 实际命中的索引；`rows` 预估扫描行数；`filtered` 过滤比例
+
+## 覆盖索引示例
+
+```sql
+-- 只取 price 与 id，走覆盖索引
+CREATE INDEX idx_products_price_id ON products(price, id);
+SELECT id, price FROM products WHERE price BETWEEN 100 AND 500 ORDER BY price;
+```
+
+## 常见陷阱
+
+- 过多索引影响写入与空间；定期清理冗余索引
+- 低选择性列（如性别、状态）单列索引价值有限
+- 混用不同字符集/排序规则导致比较异常
+
+## 小结
+
+理解索引工作方式与 `EXPLAIN`，是优化查询的核心。下一步前往“连接与聚合”。
+

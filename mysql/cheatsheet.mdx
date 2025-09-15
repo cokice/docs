@@ -1,0 +1,63 @@
+---
+title: "速查表"
+description: "常用 SQL 与管理命令清单，便于快速复制使用"
+---
+
+将常用操作浓缩为一页速查，方便日常开发与运维。
+
+## 连接与会话
+
+```bash
+mysql -h 127.0.0.1 -P 3306 -u root -p
+```
+
+```sql
+SHOW DATABASES; USE shop; SHOW TABLES; DESCRIBE users;
+```
+
+## CRUD
+
+```sql
+INSERT INTO t (a,b) VALUES (1,2);
+SELECT * FROM t WHERE a = 1 ORDER BY b DESC LIMIT 10;
+UPDATE t SET b = b + 1 WHERE a = 1;
+DELETE FROM t WHERE a = 1;
+```
+
+## 索引
+
+```sql
+CREATE INDEX idx_t_a ON t(a);
+CREATE UNIQUE INDEX ux_t_email ON t(email);
+EXPLAIN SELECT * FROM t WHERE a = 1;
+```
+
+## 事务
+
+```sql
+START TRANSACTION; -- 或 BEGIN
+-- ...
+COMMIT; -- 或 ROLLBACK
+```
+
+## 备份恢复
+
+```bash
+mysqldump -u root -p --single-transaction --databases shop > shop.sql
+mysql -u root -p < shop.sql
+```
+
+## 权限
+
+```sql
+CREATE USER 'app'@'%' IDENTIFIED BY 'pwd';
+GRANT SELECT, INSERT, UPDATE, DELETE ON shop.* TO 'app'@'%';
+SHOW GRANTS FOR 'app'@'%';
+```
+
+## 诊断
+
+```sql
+SHOW PROCESSLIST; SHOW ENGINE INNODB STATUS; EXPLAIN ANALYZE SELECT ...;
+```
+
