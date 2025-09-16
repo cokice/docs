@@ -1,4 +1,4 @@
-{
+﻿{
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Howen docs",
@@ -22,7 +22,7 @@
           {
             "group": "Deep Research",
             "pages": [
-              "Deep Research/China Japan US Living Costs"
+              "deep-research/china-japan-us-living-costs"
             ]
           },
           {
