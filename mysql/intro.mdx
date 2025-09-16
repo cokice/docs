@@ -10,16 +10,52 @@ MySQL 是最流行的开源关系型数据库之一，具备高性能、低成�
 示例命令与 SQL 语句保持英文原文（如 `mysql`, `mysqldump`），正文提供中文解释，方便复制粘贴。
 </Info>
 
-## 你将学到
+## 读者画像
 
-- 安装与连接：Windows/macOS/Linux 或 Docker 快速运行 MySQL
-- 基础 SQL：库/表/数据类型，`SELECT/INSERT/UPDATE/DELETE` 常用写法
-- 表设计与索引：主键/外键、联合索引、覆盖索引、`EXPLAIN`
-- 查询进阶：连接（JOIN）、子查询、聚合（`GROUP BY/HAVING`）
-- 事务与锁：ACID、隔离级别、死锁排查、`START TRANSACTION`
-- 备份与恢复：`mysqldump`、二进制日志、PITR 思路
-- 性能优化：慢查询定位、索引设计、配置优化与观测
-- 安全与权限：`CREATE USER`、`GRANT`、最小权限实践
+- 需要为 Web/移动应用设计数据库的后端工程师
+- 负责维护现有 MySQL 集群、希望提升可靠性与性能的运维/DBA
+- 需要理解 SQL 行为、为数据分析或 BI 建模的数据工程师
+
+<Note>
+即便之前接触过其他数据库（PostgreSQL、SQL Server 等），也可通过对比快速掌握 MySQL 的默认行为与差异点。
+</Note>
+
+## 前置知识与工具
+
+- 熟悉基本命令行操作（Windows PowerShell 或 Unix shell）
+- 了解 Git、包管理器或容器工具（Homebrew、apt、Docker 等）
+- 对关系模型有初步概念：表、行、列、主键等
+
+<CodeGroup>
+  ```bash Windows
+  mysql --version
+  ```
+
+  ```bash macOS/Linux
+  which mysql && mysql --version
+  ```
+</CodeGroup>
+
+## 如何使用本教程
+
+<Steps>
+  <Step title="安装与环境">
+    选择你的平台完成安装，并创建独立的业务账号，确保每个练习都在隔离环境里进行。
+  </Step>
+  <Step title="SQL 基础">
+    通过 `SELECT/INSERT/UPDATE/DELETE` 操作熟悉增删改查，并对数据类型和约束形成直觉。
+  </Step>
+  <Step title="表设计与索引">
+    从范式化建模切入，结合 `EXPLAIN` 理解索引命中与执行计划。
+  </Step>
+  <Step title="进阶主题">
+    事务、锁、备份与恢复、性能优化、安全权限等内容可按需选读，也可顺序深入。
+  </Step>
+</Steps>
+
+<Tip>
+建议在本地或 Docker 中准备一个 `shop` 示例库，所有章节都围绕该数据集展开，可避免环境差异带来的偏差。
+</Tip>
 
 ## 示例数据库
 
@@ -65,6 +101,10 @@ CREATE TABLE order_items (
 ) ENGINE=InnoDB;
 ```
 
+<Note>
+示例库遵循交易型系统常见模式：用户-订单-明细，后续章节会在此基础上拓展查询、事务与备份案例。
+</Note>
+
 ## 学习路径
 
 1. 安装与环境（/mysql/install）
@@ -76,3 +116,14 @@ CREATE TABLE order_items (
 7. 性能优化（/mysql/performance）
 8. 安全与权限（/mysql/security）
 9. 故障排查（/mysql/troubleshooting）
+10. 速查表（/mysql/cheatsheet）
+
+## 推荐资料
+
+- [MySQL 官方文档](https://dev.mysql.com/doc/refman/8.0/en/)：深入细节的最佳来源
+- [Percona Blog](https://www.percona.com/blog/)：大量性能调优与生产经验分享
+- [MySQL Shell](https://dev.mysql.com/doc/mysql-shell/8.0/en/)：现代化多功能客户端，支持 JS/Python 脚本化操作
+
+<Warning>
+生产系统变更请先在测试环境演练，并准备回滚/备份方案，避免直接在线上实验教程中的命令。
+</Warning>

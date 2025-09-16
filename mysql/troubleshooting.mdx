@@ -4,12 +4,48 @@ description: "连接失败、权限问题、锁等待、死锁、内存与连接
 icon: "wrench"
 ---
 
-汇总 MySQL 常见错误与快速定位思路，帮助你更高效地解题。
+汇总 MySQL 常见错误与快速定位思路，帮助你更高效地解题。推荐遵循“确认症状 → 收集信息 → 定位根因 → 验证修复”的步骤。
+
+## 排查流程
+
+<Steps>
+  <Step title="确认影响范围">
+    观察报错信息、业务影响面、是否集中在某个时间段或实例。
+  </Step>
+  <Step title="收集证据">
+    查看错误日志、慢日志、`SHOW PROCESSLIST`，记录相关 SQL 与会话 ID。
+  </Step>
+  <Step title="分析定位">
+    结合 `performance_schema`、系统指标找出瓶颈点（锁、IO、CPU、权限等）。
+  </Step>
+  <Step title="执行修复并验证">
+    应用修复措施、回归测试，并关注是否引入新的隐患。
+  </Step>
+</Steps>
+
+## 错误日志位置
+
+```bash
+# Linux/macOS 默认
+sudo tail -f /var/log/mysql/error.log
+
+# Docker
+docker logs -f mysql8
+```
+
+<Note>
+查看日志前可通过 `SHOW VARIABLES LIKE 'log_error';` 获取实际路径。
+</Note>
 
 ## 连接失败
 
 - `ERROR 1045 (28000): Access denied`：用户名/密码/来源主机不匹配，`SHOW GRANTS FOR 'user'@'host'` 检查授权
 - `Can't connect to MySQL server (10061/2003)`：服务未启动/端口被占用/防火墙拦截
+- `ERROR 2059 (HY000): Authentication plugin`：客户端不支持 `caching_sha2_password`，升级驱动或更换插件
+
+```sql
+SELECT user, host, plugin FROM mysql.user;
+```
 
 ## 权限问题
 
@@ -18,29 +54,65 @@ SHOW GRANTS FOR 'app'@'%';
 -- 如授权无效，执行 FLUSH PRIVILEGES 或重新 GRANT
 ```
 
+检查 `mysql.db`、`mysql.tables_priv` 手动定位具体权限。
+
 ## 锁等待与死锁
 
 ```sql
 SHOW PROCESSLIST; -- 查活跃会话
 SHOW ENGINE INNODB STATUS; -- 查看死锁与等待信息
 SELECT * FROM performance_schema.data_locks; -- 8.0 锁详情
+SELECT * FROM sys.innodb_lock_waits ORDER BY wait_started DESC LIMIT 5;
 ```
 
 缓解：缩短事务、减少范围更新、对热点查询/更新加索引、保持更新顺序一致。
+
+## 慢查询
+
+- 开启慢查询日志并分析热点 SQL，确认是否缺失索引或存在不必要的排序
+- 使用 `EXPLAIN ANALYZE` 观察实际耗时
+- 关注 `performance_schema.events_statements_summary_by_digest`
 
 ## 连接数与资源
 
 - `Too many connections`：提升 `max_connections`，同时使用连接池与合理超时
 - `Out of memory`：检查 `innodb_buffer_pool_size`、大查询/排序导致的临时内存
+- `Disk full`：确认 `tmpdir`、`innodb_log_group_home_dir` 所在分区空间
+
+```sql
+SHOW VARIABLES LIKE 'max_connections';
+SHOW GLOBAL STATUS LIKE 'Threads_connected';
+```
 
 ## 字符集与乱码
 
 确保客户端与服务器均为 `utf8mb4`，并统一排序规则。
 
+```sql
+SHOW VARIABLES LIKE 'character_set_%';
+SHOW VARIABLES LIKE 'collation_%';
+```
+
+若导出/导入出现乱码，可在命令中指定 `--default-character-set=utf8mb4`。
+
 ## 大事务与回滚慢
 
-避免大批量单事务；分批提交，每批控制在数千行以内。
+- 避免一次性更新/删除海量数据，分批提交，每批控制在数千行以内
+- 检查是否有长事务未提交：`SHOW ENGINE INNODB STATUS` 中的 `TRANSACTIONS` 段落
+- 使用 `performance_schema.events_transactions_history_long` 查找持续时间长的事务
+
+## 复制延迟
+
+- `SHOW SLAVE STATUS\G`（5.7）或 `SHOW REPLICA STATUS\G`（8.0）查看 `Seconds_Behind_Master`
+- 关注 `Replica_IO_Running`、`Replica_SQL_Running` 状态
+- 检查大事务、DDL 或网络延迟是否导致积压
+
+## 工具建议
+
+- `mysqlslap`：简单性能压测
+- `pt-heartbeat`：监控主从延迟
+- `Percona Toolkit`：提供行对比、复制检查、锁监控等工具
 
 ## 小结
 
-遇到问题先观测：日志、`SHOW ...`、`performance_schema`，再定位根因，最后验证修复。
+遇到问题先观测：日志、`SHOW ...`、`performance_schema`，再定位根因，最后验证修复。建立标准化的排查流程能在压力下保持清晰思路。

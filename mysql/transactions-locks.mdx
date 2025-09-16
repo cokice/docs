@@ -4,7 +4,7 @@ description: "ACID、隔离级别、InnoDB 锁、死锁诊断与最佳实践"
 icon: "lock"
 ---
 
-事务保证数据一致性，但也可能带来锁竞争。本节解释 MySQL 事务模型、隔离级别与常见锁问题的诊断与规避。
+事务保证数据一致性，但也可能带来锁竞争。本节解释 MySQL 事务模型、隔离级别、一致性读、常见锁问题的诊断与规避方法。
 
 ## 事务基础
 
@@ -15,18 +15,34 @@ START TRANSACTION;  -- 或 BEGIN
 COMMIT;             -- 或 ROLLBACK
 ```
 
-ACID 与隔离级别：
+- InnoDB 默认开启自动提交（Autocommit=1），单条语句自动提交
+- 多条语句需要显式事务块，确保要么全部成功要么全部回滚
+- 建议在应用层使用连接池，并在每次请求结束前明确 `COMMIT/ROLLBACK`
+
+## ACID 与隔离级别
 
 - READ UNCOMMITTED：可能脏读（不推荐）
 - READ COMMITTED：常见于其他数据库
 - REPEATABLE READ（默认）：快照读，防止不可重复读
 - SERIALIZABLE：最强隔离，但并发差
 
-查看与设置隔离级别：
-
 ```sql
 SHOW VARIABLES LIKE 'transaction_isolation';
 SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+```
+
+<Note>
+MySQL 的 REPEATABLE READ 通过 MVCC + 间隙锁规避幻读，对比 Oracle/SQL Server 的 READ COMMITTED 需特别留意行为差异。
+</Note>
+
+## 一致性读与当前读
+
+- 一致性读（Consistent Read）：普通 `SELECT` 在事务开始时创建快照，不会加锁
+- 当前读（Current Read）：`SELECT ... FOR UPDATE/LOCK IN SHARE MODE`、`UPDATE/DELETE`，会获取行锁
+
+```sql
+SELECT * FROM products WHERE id = 1 FOR UPDATE; -- 当前读
+SELECT * FROM products WHERE id = 1;            -- 一致性读
 ```
 
 ## 锁类型（InnoDB）
@@ -41,6 +57,10 @@ SELECT * FROM products WHERE id = 1 FOR UPDATE;
 UPDATE products SET stock = stock - 1 WHERE id = 1;
 ```
 
+<Tip>
+尽量让事务保持短小，将读写操作顺序固定，并在应用层重试死锁被回滚的事务。
+</Tip>
+
 ## 死锁与排查
 
 症状：`ERROR 1213 (40001): Deadlock found ...` 或 `Lock wait timeout exceeded`。
@@ -49,20 +69,46 @@ UPDATE products SET stock = stock - 1 WHERE id = 1;
 SHOW ENGINE INNODB STATUS; -- 观察死锁最新记录
 
 -- performance_schema 辅助（8.0+）
-SELECT * FROM performance_schema.data_locks;       
-SELECT * FROM performance_schema.events_transactions_current;
+SELECT * FROM performance_schema.data_locks;      
+SELECT * FROM performance_schema.data_lock_waits;
+SELECT * FROM performance_schema.events_transactions_history_long;
 ```
 
-规避建议：
+配合 `sys` schema 更易读：
 
-- 保持一致的更新顺序；缩短事务时间，避免长事务
-- 合理建立索引减少锁定范围；批量写分批提交
-- 锁定读（`FOR UPDATE`）在必要时使用
+```sql
+SELECT * FROM sys.innodb_lock_waits ORDER BY wait_started DESC LIMIT 5;
+```
 
 ## 幻读与间隙锁
 
 在 REPEATABLE READ 下，范围更新可能触发间隙锁，阻止范围内的插入从而避免幻读。需要注意锁竞争风险。
 
+```sql
+START TRANSACTION;
+SELECT * FROM orders WHERE total BETWEEN 100 AND 500 FOR UPDATE;
+-- 此时其他事务往该区间插入新行会被阻塞
+```
+
+## 锁等待监控
+
+- `SHOW PROCESSLIST`：查看当前语句与状态
+- `performance_schema.events_statements_current`：捕获正在执行的语句
+- `innodb_status_output_locks = ON`（动态变量）可将锁信息写入错误日志
+
+```sql
+SELECT * FROM performance_schema.events_statements_current\G
+SELECT * FROM performance_schema.metadata_locks WHERE OBJECT_SCHEMA = 'shop';
+```
+
+## 最佳实践
+
+- 保持 SQL 顺序一致（如总是按 `orders` → `order_items` 更新）
+- 减少范围更新，优先精准匹配；必要时拆批
+- 使用合适索引缩小锁范围
+- 对长期运行任务（报表、导出）使用一致性读或在从库执行
+- 对于热点写操作，可引入队列/异步处理或乐观锁（版本号）
+
 ## 小结
 
-理解隔离级别与锁行为，能有效减少并发冲突与死锁。下一步前往“备份与恢复”。
+理解隔离级别与锁行为，能有效减少并发冲突与死锁。下一步前往“备份与恢复”，构建可靠的数据保护策略。

@@ -4,7 +4,24 @@ description: "慢查询定位、执行计划、索引与 SQL 重写、关键配�
 icon: "gauge"
 ---
 
-性能优化的核心是“度量-诊断-验证”。本节从慢查询日志、`EXPLAIN/ANALYZE`、索引与 SQL 重写、关键配置入手给出系统化方法。
+性能优化的核心是“度量-诊断-验证”。本节从慢查询日志、`EXPLAIN/ANALYZE`、索引与 SQL 重写、关键配置入手给出系统化方法，并介绍性能观测工具。
+
+## 优化流程速记
+
+<Steps>
+  <Step title="发现问题">
+    通过慢查询日志、应用监控、APM 捕获耗时 SQL 或资源瓶颈。
+  </Step>
+  <Step title="定位根因">
+    使用 `EXPLAIN`、`performance_schema`、系统指标分析问题来源。
+  </Step>
+  <Step title="制定方案">
+    从索引调整、SQL 重写、缓存策略与参数调优中选择最合适的手段。
+  </Step>
+  <Step title="验证与回归">
+    在测试环境验证效果，再平滑上线并持续监测。
+  </Step>
+</Steps>
 
 ## 定位慢查询
 
@@ -12,9 +29,14 @@ icon: "gauge"
 -- 开启慢查询日志（示例）
 SET GLOBAL slow_query_log = ON;
 SET GLOBAL long_query_time = 0.5; -- 超过 0.5s 记为慢
+SET GLOBAL log_output = 'FILE';
 ```
 
-分析工具：`mysqldumpslow`、`pt-query-digest`（Percona）
+分析工具：`mysqldumpslow`、`pt-query-digest`（Percona），或使用云厂商/监控平台提供的慢日志分析。
+
+<Note>
+线上变更全局变量前确认是否会影响其他实例；可优先设置 `SET SESSION long_query_time = ...` 对当前会话生效。
+</Note>
 
 ## 执行计划与验证
 
@@ -23,26 +45,89 @@ EXPLAIN SELECT ...;
 EXPLAIN ANALYZE SELECT ...; -- 8.0+ 返回实际耗时与行数
 ```
 
-关注：访问类型（`type`）、命中索引（`key`）、扫描行数（`rows`）、排序/临时（`Extra`）
+关注字段：访问类型（`type`）、命中索引（`key`）、扫描行数（`rows`）、`Extra` 中是否 `Using filesort/temporary`。
+
+可配合 `optimizer_trace` 深入理解优化器决策：
+
+```sql
+SET optimizer_trace="enabled=on";
+EXPLAIN FORMAT=JSON SELECT ...;
+SELECT trace FROM information_schema.optimizer_trace\G
+```
 
 ## 索引与 SQL 重写
 
-- 尽量避免 `SELECT *`，明确需要的列，争取覆盖索引
+- 避免 `SELECT *`，明确需要的列，争取覆盖索引
 - 合理的复合索引顺序：高选择性列优先；与 WHERE、JOIN、ORDER BY 对齐
 - 使用等值连接优先于子查询；必要时用 `EXISTS` 替代 `IN`
-- 分页优化：`WHERE id > ? ORDER BY id LIMIT n` 而非 `OFFSET`
+- 分页优化：`WHERE id > ? ORDER BY id LIMIT n` 而非大量 `OFFSET`
+- 使用虚拟列和功能性索引帮助命中表达式条件
 
-## 关键配置（示例）
+```sql
+-- 覆盖索引示例
+CREATE INDEX idx_orders_user_status_created ON orders(user_id, status, created_at);
+SELECT user_id, status, created_at FROM orders
+WHERE user_id = 1 AND status = 'PAID'
+ORDER BY created_at DESC LIMIT 20;
+```
 
-- `innodb_buffer_pool_size`：一般设为物理内存的 50%~70%
-- `innodb_flush_log_at_trx_commit`：`1` 强一致，`2`/`0` 性能更好但有丢数风险
+## 关键参数参照
+
+- `innodb_buffer_pool_size`：通常设为物理内存的 50%~70%
+- `innodb_log_file_size`：大事务场景适当增大，减少写入阻塞
+- `innodb_flush_log_at_trx_commit`：`1` 最安全；`2`/`0` 性能更好但可能丢失 1 秒内事务
 - `max_connections`：结合连接池使用，避免过大导致上下文切换
+- `query_cache_type`/`query_cache_size`：MySQL 8.0 移除查询缓存，建议通过应用层缓存
+
+<Warning>
+参数调整前请备份配置并记录当前值，逐步调节并监控效果，避免一次改动过多项。
+</Warning>
 
 ## 观测与统计
 
 - `performance_schema` + `sys` schema：方便查看热点表/索引、语句摘要
-- 定期 `ANALYZE TABLE` 更新统计信息
+- `sys.schema_table_statistics`：按表统计读写量
+- `sys.statement_analysis`：按摘要查看平均/最大执行时间
+- `INFORMATION_SCHEMA.TABLE_STATISTICS`：统计信息检查
+
+```sql
+SELECT * FROM sys.schema_table_statistics ORDER BY rows_fetched DESC LIMIT 10;
+SELECT * FROM sys.statement_analysis ORDER BY avg_latency DESC LIMIT 10;
+```
+
+## 资源瓶颈排查
+
+- CPU 高：确认是否大量排序、哈希或全表扫描；考虑索引优化或拆分
+- IO 高：检查缓冲池是否足够、是否存在大查询或备份任务
+- 内存紧张：查看 `SHOW ENGINE INNODB STATUS` 中缓冲池命中率
+- 连接数暴涨：应用是否缺乏连接池、是否存在长事务
+
+可以使用 `performance_schema.events_waits_summary_global_by_event_name` 分析等待事件。
+
+## Profiling 与基线
+
+```sql
+SET profiling = 1;
+SELECT ...; -- 仅在开发环境使用
+SHOW PROFILES;
+SHOW PROFILE FOR QUERY 1;
+```
+
+MySQL 8.0 默认关闭 profiling，建议改用 `performance_schema`。在测试环境建立基准脚本（sysbench、自定义压测）持续追踪性能。
+
+## 查询重写与缓存
+
+- 通过应用层缓存（Redis、内存缓存）减少重复查询
+- 使用物化视图策略：定时刷新统计表
+- MySQL 8.0 引入的 `CREATE VIEW` 仍为逻辑视图，注意查询展开成本
+- 可以借助 ProxySQL 或 MySQL Router 实现读写分离与路由
+
+## 持续优化建议
+
+- 建立 SQL 审核流程：上线前通过工具检测危险语句
+- 定期检查慢日志并打标签（业务模块、操作来源）
+- 将指标接入监控平台（Prometheus、Grafana），设定告警阈值
 
 ## 小结
 
-优化建立在度量与验证之上，借助慢日志、`EXPLAIN ANALYZE` 与合理索引能快速见效。
+优化建立在度量与验证之上，借助慢日志、`EXPLAIN ANALYZE` 与合理索引能快速见效。持续监控与自动化分析可帮助你提前发现潜在问题。

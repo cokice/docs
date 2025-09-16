@@ -4,25 +4,49 @@ description: "常用 SQL 与管理命令清单，便于快速复制使用"
 icon: "list"
 ---
 
-将常用操作浓缩为一页速查，方便日常开发与运维。
+将常用操作浓缩为一页速查，方便日常开发与运维。所有命令默认在 MySQL 8.0 环境下测试，必要时替换库名/主机信息。
 
 ## 连接与会话
 
 ```bash
 mysql -h 127.0.0.1 -P 3306 -u root -p
+mysql --defaults-file=~/.my.cnf shop
 ```
 
 ```sql
 SHOW DATABASES; USE shop; SHOW TABLES; DESCRIBE users;
+SELECT VERSION(); SELECT NOW();
+```
+
+## DDL（数据定义）
+
+```sql
+CREATE DATABASE IF NOT EXISTS shop DEFAULT CHARACTER SET utf8mb4;
+CREATE TABLE users (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(100) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+ALTER TABLE users ADD COLUMN last_login DATETIME;
+DROP TABLE IF EXISTS temp_stage;
 ```
 
 ## CRUD
 
 ```sql
 INSERT INTO t (a,b) VALUES (1,2);
+INSERT INTO t SET a = 1, b = 2;
 SELECT * FROM t WHERE a = 1 ORDER BY b DESC LIMIT 10;
 UPDATE t SET b = b + 1 WHERE a = 1;
 DELETE FROM t WHERE a = 1;
+```
+
+## 聚合与 JOIN
+
+```sql
+SELECT status, COUNT(*) FROM orders GROUP BY status;
+SELECT u.name, COUNT(o.id) FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.name;
 ```
 
 ## 索引
@@ -30,22 +54,27 @@ DELETE FROM t WHERE a = 1;
 ```sql
 CREATE INDEX idx_t_a ON t(a);
 CREATE UNIQUE INDEX ux_t_email ON t(email);
-EXPLAIN SELECT * FROM t WHERE a = 1;
+ALTER TABLE orders ADD INDEX idx_orders_user_created (user_id, created_at);
+EXPLAIN ANALYZE SELECT * FROM t WHERE a = 1;
 ```
 
 ## 事务
 
 ```sql
-START TRANSACTION; -- 或 BEGIN
+START TRANSACTION;
 -- ...
+SAVEPOINT before_update;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+ROLLBACK TO SAVEPOINT before_update;
 COMMIT; -- 或 ROLLBACK
 ```
 
 ## 备份恢复
 
 ```bash
-mysqldump -u root -p --single-transaction --databases shop > shop.sql
+mysqldump -u root -p --single-transaction --master-data=2 shop > shop.sql
 mysql -u root -p < shop.sql
+mysqlbinlog --start-datetime="2024-01-01 10:00:00" binlog.000012 | mysql -u root -p
 ```
 
 ## 权限
@@ -53,11 +82,44 @@ mysql -u root -p < shop.sql
 ```sql
 CREATE USER 'app'@'%' IDENTIFIED BY 'pwd';
 GRANT SELECT, INSERT, UPDATE, DELETE ON shop.* TO 'app'@'%';
+REVOKE DELETE ON shop.* FROM 'app'@'%';
 SHOW GRANTS FOR 'app'@'%';
 ```
 
 ## 诊断
 
 ```sql
-SHOW PROCESSLIST; SHOW ENGINE INNODB STATUS; EXPLAIN ANALYZE SELECT ...;
+SHOW PROCESSLIST;
+SHOW ENGINE INNODB STATUS\G;
+SELECT * FROM performance_schema.events_statements_current\G;
+EXPLAIN FORMAT=JSON SELECT ...;
 ```
+
+## 运维常用
+
+```bash
+mysqladmin -u root -p status
+mysqlshow -u root -p shop
+# 监控连接
+watch -n 5 "mysqladmin -u root -p status"
+```
+
+## 复制与高可用
+
+```sql
+CHANGE REPLICATION SOURCE TO SOURCE_HOST='10.0.0.2', SOURCE_USER='repl', SOURCE_PASSWORD='replica_pwd', SOURCE_LOG_FILE='binlog.000123', SOURCE_LOG_POS=456789;
+START REPLICA;
+SHOW REPLICA STATUS\G;
+```
+
+## JSON 与日期函数
+
+```sql
+SELECT JSON_EXTRACT(metadata, '$.color') FROM products;
+SELECT DATE_FORMAT(created_at, '%Y-%m-%d') FROM orders;
+SELECT DATE_SUB(CURDATE(), INTERVAL 7 DAY);
+```
+
+<Tip>
+将常用命令保存在个人笔记或 `.sql` 模板文件中，可结合 `source path/to/file.sql` 快速复用。
+</Tip>

@@ -4,12 +4,17 @@ description: "在 Windows/macOS/Linux 与 Docker 快速安装 MySQL 并连接"
 icon: "server"
 ---
 
-本节介绍如何在不同平台安装并启动 MySQL 8，以及如何创建用户、初始化示例数据库与常用连接方式。
+本节介绍如何在不同平台安装并启动 MySQL 8，以及如何创建用户、初始化示例数据库与常用连接方式。重点强调“快速可用 + 可重复”。
 
-## 版本建议
+## 版本建议与发行版
 
 - 推荐使用 MySQL 8.0+（InnoDB 优化、窗口函数、CTE、`EXPLAIN ANALYZE` 等特性）
-- 若需与旧系统兼容，可安装 5.7，但不建议新项目使用
+- 若需商业特性或在线热备，可考虑云厂商的 MySQL 兼容服务（RDS、TiDB 等）
+- MySQL 社区版即可满足大多数场景；如需企业支持，可评估 Enterprise 版或 Percona Server
+
+<Tip>
+升级时遵循“先从备机/测试环境验证，再滚动主备”的策略；跨大版本升级前务必阅读官方变更列表与不兼容项。
+</Tip>
 
 ## 安装方式
 
@@ -27,6 +32,10 @@ net start MySQL80
 net stop MySQL80
 ```
 
+<Note>
+如果使用 ZIP 包解压安装，可通过 `mysqld --initialize --console` 初始化数据目录，然后使用 `mysqld --install` 注册 Windows 服务。
+</Note>
+
 ### macOS（Homebrew）
 
 ```bash
@@ -34,6 +43,8 @@ brew install mysql
 brew services start mysql
 # 停止服务：brew services stop mysql
 ```
+
+若需多版本共存，可使用 `brew install mysql@5.7` 并通过 `brew link --force` 控制默认版本。
 
 ### Linux（APT 为例）
 
@@ -44,6 +55,8 @@ sudo systemctl status mysql
 sudo systemctl start mysql
 ```
 
+RHEL/CentOS 可使用 `dnf install @mysql` 或引入官方 repo。安装后建议执行 `sudo mysql_secure_installation` 完成密码与安全选项配置。
+
 ### Docker（推荐快速试用）
 
 ```bash
@@ -52,18 +65,15 @@ docker run -d \
   -e MYSQL_ROOT_PASSWORD=secret \
   -e MYSQL_DATABASE=shop \
   -p 3306:3306 \
+  -v ~/data/mysql/conf.d:/etc/mysql/conf.d \
+  -v ~/data/mysql/data:/var/lib/mysql \
+  --health-cmd='mysqladmin ping -h 127.0.0.1 -p$${MYSQL_ROOT_PASSWORD}' \
   mysql:8.0
 ```
 
-## 连接方式
-
-命令行客户端：
-
-```bash
-mysql -h 127.0.0.1 -P 3306 -u root -p
-```
-
-常见 GUI：MySQL Workbench / TablePlus / DBeaver（选择 `Standard TCP/IP`，端口 3306）
+<Tip>
+将配置与数据目录挂载到宿主机，便于备份与版本升级。`--health-cmd` 可被编排器（Docker Compose、Kubernetes）用来检测实例健康状态。
+</Tip>
 
 ## 初始安全设置（生产环境）
 
@@ -82,12 +92,79 @@ FLUSH PRIVILEGES;
 避免直接对外暴露 `root`。生产环境请限制来源 IP、启用强密码策略，并考虑开启 TLS 连接。
 </Warning>
 
-## 初始化示例库
+## 校验运行状态
 
-使用“概述”页提供的 `shop` 示例建表语句，或在 Docker 启动时通过 `-e MYSQL_DATABASE=shop` 初始化库。
+```bash
+mysqladmin -h 127.0.0.1 -P 3306 -u root -p status
+mysqlshow -u root -p
+```
+
+检查日志：
+
+```bash
+# Linux/macOS 默认路径
+sudo tail -f /var/log/mysql/error.log
+
+# Docker 容器
+docker logs -f mysql8
+```
+
+## 配置文件基础
+
+<CodeGroup>
+  ```ini Linux/macOS
+  # /etc/mysql/my.cnf 或 conf.d/override.cnf
+  [mysqld]
+  bind-address = 0.0.0.0
+  character-set-server = utf8mb4
+  collation-server = utf8mb4_0900_ai_ci
+  innodb_buffer_pool_size = 1G
+  slow_query_log = ON
+  slow_query_log_file = /var/log/mysql/slow.log
+  ```
+
+  ```ini Windows
+  # C:\\ProgramData\\MySQL\\MySQL Server 8.0\\my.ini
+  [mysqld]
+  secure-file-priv = "C:/mysql_files"
+  log-error = "C:/ProgramData/MySQL/MySQL Server 8.0/Data/hostname.err"
+  ```
+</CodeGroup>
+
+重启服务后可使用 `SHOW VARIABLES LIKE 'character_set_server';` 验证生效。
+
+## 连接方式
+
+命令行客户端：
+
+```bash
+mysql -h 127.0.0.1 -P 3306 -u root -p
+```
+
+常见 GUI：MySQL Workbench、TablePlus、DBeaver（选择 `Standard TCP/IP`，端口 3306）。若需脚本化任务，可尝试 MySQL Shell (`mysqlsh`) 的 JavaScript/Python 模式。
+
+<Note>
+从远程访问时请确认 `bind-address`、防火墙与安全组配置允许访问，生产环境建议配合 VPN 或堡垒机。
+</Note>
+
+## 初始化示例库与数据
+
+- 使用“概述”页提供的 `shop` 示例建表语句
+- 或在 Docker 启动时通过 `-e MYSQL_DATABASE=shop` 初始化库
+- 也可在 `docker run` 时挂载 SQL 文件至 `/docker-entrypoint-initdb.d/`，容器首次启动会自动执行
+
+```bash
+docker cp bootstrap.sql mysql8:/docker-entrypoint-initdb.d/01-bootstrap.sql
+docker restart mysql8 # 若首次启动已完成，可手动执行 mysql < bootstrap.sql
+```
 
 ## 常见问题
 
 - 无法连接：检查端口、防火墙；容器映射是否为 `-p 3306:3306`
 - 权限不足：确认 `GRANT` 的库/表范围与来源主机匹配（如 `%`、`localhost`）
 - 字符集：推荐库/表使用 `utf8mb4` 及合适的排序规则（如 `utf8mb4_0900_ai_ci`）
+- 自动启动：Windows 通过“服务”设置启动类型；Linux 使用 `systemctl enable mysql`
+
+<Tip>
+在 CI/CD 中运行 MySQL，可使用 Docker Compose 定义服务，并通过 `healthcheck` 保证数据库准备就绪后再执行测试。
+</Tip>

@@ -4,7 +4,7 @@ description: "用户、角色、GRANT/REVOKE、最小权限、网络加密与合
 icon: "shield-check"
 ---
 
-安全从账户、权限与网络三方面入手。本节介绍创建用户、分配最小权限与常见安全配置。
+安全从账户、权限、网络与审计多方面入手。本节介绍创建用户、分配最小权限、安全配置与审计策略。
 
 ## 用户与角色
 
@@ -19,7 +19,11 @@ GRANT 'role_readonly' TO 'report'@'10.%';
 SET DEFAULT ROLE 'role_readonly' FOR 'report'@'10.%';
 ```
 
-## 权限分配
+<Tip>
+建议将权限授予角色，再将角色赋予用户，方便集中管理与审计；变更权限时只需调整角色。
+</Tip>
+
+## 权限分配与回收
 
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON shop.* TO 'app'@'%';
@@ -27,21 +31,75 @@ REVOKE DELETE ON shop.* FROM 'app'@'%';
 SHOW GRANTS FOR 'app'@'%';
 ```
 
+- 使用最小权限原则，只授予业务绝对需要的操作
+- 定期核查 `mysql.user`、`mysql.db` 表了解权限分布
+- 对临时需求（如调试）使用“授予-完成后立即回收”的流程
+
 <Warning>
-避免授予 `SUPER`、`FILE` 等高危权限；谨慎使用 `WITH GRANT OPTION`。
+避免授予 `SUPER`、`FILE`、`SHUTDOWN` 等高危权限；谨慎使用 `WITH GRANT OPTION` 以免权限蔓延。
 </Warning>
+
+## 密码与认证策略
+
+```sql
+-- 启用密码复杂度
+SET PERSIST validate_password.policy = MEDIUM;
+SET PERSIST validate_password.length = 12;
+
+-- 设置密码过期
+ALTER USER 'app'@'%' PASSWORD EXPIRE INTERVAL 90 DAY;
+```
+
+- 使用 `caching_sha2_password`（8.0 默认）提升安全性
+- 可通过 `ALTER USER ... REQUIRE SSL` 强制特定账号使用 TLS
+- 结合企业级身份管理（LDAP、Kerberos）可统一认证
 
 ## 网络与加密
 
 - 仅暴露必要端口，后端私网访问优先
 - 开启 TLS：配置 `ssl_ca`/`ssl_cert`/`ssl_key`，客户端使用 `--ssl-mode=REQUIRED`
 - 参数 `secure_file_priv` 限制导入导出目录，避免任意文件读写
+- 对公网访问开启防火墙白名单，配合 WAF/堡垒机
 
-## 审计与合规
+```ini
+[mysqld]
+require_secure_transport = ON
+ssl_ca   = /etc/mysql/certs/ca.pem
+ssl_cert = /etc/mysql/certs/server-cert.pem
+ssl_key  = /etc/mysql/certs/server-key.pem
+```
 
-- 开启密码策略与过期策略；定期轮换
-- 审计插件/云厂商审计服务记录关键操作
+## 数据静态加密与备份安全
+
+- 使用磁盘加密（LUKS、BitLocker）或云厂商提供的加密盘
+- MySQL Enterprise 支持表空间透明加密；社区版可借助文件系统
+- 备份文件同样需要加密与访问控制，可使用 `gpg` 或对象存储的加密选项
+
+## 审计与日志
+
+- 启用通用日志/慢日志仅限排障，常态建议关闭以减少信息暴露
+- 使用审计插件（MySQL Enterprise Audit、Percona Audit Log Plugin）记录登录与敏感操作
+- 将错误日志、连接日志集中收集到日志平台，配合告警
+
+```sql
+-- Percona Server 示例
+INSTALL PLUGIN audit_log SONAME 'audit_log.so';
+SET GLOBAL audit_log_policy = 'LOGINS';
+```
+
+## 合规与流程
+
+- 建立权限申请/审批流程，记录变更工单
+- 定期执行权限复核（季度/半年），确认离职及角色变化
+- 在 CI/CD 管道引入 SQL 审核，提前阻断危险语句
+- 使用密钥管理服务（KMS）或 Vault 存储数据库凭证，避免明文写入配置
+
+## 应急预案
+
+- 准备账号锁定策略：多次登录失败自动禁用并通知安全团队
+- 建立安全事件响应流程：日志留存、备份保护、快速换密钥
+- 定期演练灾备切换与数据恢复，确保安全事件下仍能保障业务
 
 ## 小结
 
-遵循“默认拒绝、最小权限、分层防护”的原则建立安全基线。
+遵循“默认拒绝、最小权限、分层防护”的原则建立安全基线。定期审计、加密与流程管理同样重要，确保 MySQL 实例在合规与安全要求下稳定运行。

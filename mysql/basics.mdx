@@ -4,7 +4,7 @@ description: "数据库/表、数据类型，SELECT/INSERT/UPDATE/DELETE 常用�
 icon: "book-open"
 ---
 
-掌握基础 SQL 是使用 MySQL 的第一步。本节覆盖数据库与表的创建、常见数据类型、增删改查与基本筛选排序。
+掌握基础 SQL 是使用 MySQL 的第一步。本节覆盖数据库与表的创建、常见数据类型、增删改查、常用函数及典型约束写法，帮助你在日常开发中高效建模与查询。
 
 ## 库与表
 
@@ -20,9 +20,19 @@ USE shop;
 CREATE TABLE categories (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   name VARCHAR(100) NOT NULL UNIQUE,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  description TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+-- 修改结构
+ALTER TABLE categories ADD COLUMN parent_id BIGINT NULL;
+ALTER TABLE categories DROP COLUMN description;
 ```
+
+<Tip>
+定义字段时优先考虑是否需要 `NOT NULL`、默认值与约束，提前设计可以减少后续数据清洗成本。
+</Tip>
 
 ## 常见数据类型
 
@@ -30,6 +40,29 @@ CREATE TABLE categories (
 - 字符串：`CHAR(n)` 固定长度、`VARCHAR(n)` 变长；文本 `TEXT` 系列
 - 日期时间：`DATE/TIME/DATETIME/TIMESTAMP`；`TIMESTAMP` 有时区相关行为
 - 布尔：`BOOLEAN` 为 `TINYINT(1)` 的别名
+- JSON：MySQL 5.7+ 原生 `JSON` 类型，支持 `->`、`JSON_EXTRACT`
+
+<Note>
+选择排序规则（collation）会影响比较与排序，中文常用 `utf8mb4_zh_0900_as_cs`（区分大小写/声调），默认 `utf8mb4_0900_ai_ci` 为不区分大小写。
+</Note>
+
+## 约束与默认值
+
+```sql
+CREATE TABLE products (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(200) NOT NULL,
+  price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
+  stock INT NOT NULL DEFAULT 0,
+  status ENUM('ON','OFF') NOT NULL DEFAULT 'ON',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY ux_products_name (name)
+);
+```
+
+- `CHECK` 约束在 8.0+ 才真正执行
+- ENUM 适合枚举值较少、稳定的状态字段
+- 可以使用 `DEFAULT` 配合 `ON UPDATE` 自动维护时间戳
 
 ## 插入与查询
 
@@ -39,28 +72,66 @@ INSERT INTO products (name, price, stock) VALUES
 ('iPhone 15', 5999.00, 5),
 ('Kindle', 899.00, 12);
 
+-- 插入或更新（避免重复键）
+INSERT INTO products (name, price, stock)
+VALUES ('Kindle', 799.00, 20)
+ON DUPLICATE KEY UPDATE price = VALUES(price), stock = stock + VALUES(stock);
+
 -- 基础查询
 SELECT id, name, price FROM products;
 
 -- 过滤、排序、分页
-SELECT * FROM products
-WHERE price >= 1000 AND name LIKE '%i%'
-ORDER BY price DESC, id ASC
+SELECT p.id, p.name, p.price AS retail_price
+FROM products AS p
+WHERE p.price >= 1000 AND p.name LIKE '%i%'
+ORDER BY p.price DESC, p.id ASC
 LIMIT 10 OFFSET 0;
 ```
+
+<Tip>
+别名可提升可读性：`SELECT p.name AS product_name`，并可在客户端保持一致的列名。
+</Tip>
+
+## 常用表达式与函数
+
+```sql
+SELECT name,
+       stock,
+       CASE WHEN stock = 0 THEN '缺货' WHEN stock < 5 THEN '紧张' ELSE '充足' END AS stock_status,
+       ROUND(price * 0.9, 2) AS discount_price,
+       DATE_FORMAT(created_at, '%Y-%m-%d') AS created_date
+FROM products;
+
+SELECT JSON_EXTRACT(metadata, '$.color') AS color
+FROM product_attributes;
+```
+
+- 数值处理：`ROUND`, `CEIL`, `FLOOR`
+- 字符串：`CONCAT`, `SUBSTRING`, `TRIM`
+- 日期时间：`DATE_ADD`, `DATEDIFF`
+- JSON：`JSON_EXTRACT`, `JSON_SET`, `->>`（直接文本）
 
 ## 更新与删除
 
 ```sql
--- 更新
+-- 更新库存
 UPDATE products SET stock = stock - 1 WHERE id = 1;
 
--- 删除
+-- 按条件批量更新，可借助子查询
+UPDATE orders o
+JOIN users u ON u.id = o.user_id
+SET o.status = 'CANCELLED'
+WHERE u.email NOT LIKE '%@example.com';
+
+-- 删除指定行
 DELETE FROM products WHERE id = 2;
+
+-- 带限制的清理（避免一次性删除过多数据）
+DELETE FROM orders WHERE status = 'CANCELLED' ORDER BY created_at LIMIT 1000;
 ```
 
 <Warning>
-谨慎执行无 WHERE 的 `UPDATE/DELETE`，可先用 `SELECT` 验证命中范围。
+谨慎执行无 WHERE 的 `UPDATE/DELETE`，可先用 `SELECT` 验证命中范围，并在事务中操作以便出错时回滚。
 </Warning>
 
 ## 聚合与分组
@@ -74,7 +145,31 @@ FROM products
 GROUP BY name
 HAVING COUNT(*) > 1
 ORDER BY n DESC;
+
+-- 聚合与条件
+SELECT DATE(created_at) AS d, SUM(total) AS revenue
+FROM orders
+WHERE created_at >= CURDATE() - INTERVAL 7 DAY
+GROUP BY d WITH ROLLUP;
 ```
+
+`HAVING` 用于聚合后的过滤，`WITH ROLLUP` 可以得到小计/合计行。
+
+## 批量导入与导出
+
+```sql
+LOAD DATA LOCAL INFILE '/tmp/products.csv'
+INTO TABLE products
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(name, price, stock);
+```
+
+- 需要客户端启用 `--local-infile=1`
+- 可用于从 CSV 快速填充测试数据
+
+导出可通过 `SELECT ... INTO OUTFILE` 或 `mysqldump` 实现，详见“备份与恢复”。
 
 ## 简单 JOIN
 
@@ -87,6 +182,8 @@ GROUP BY u.id, u.name
 ORDER BY orders DESC;
 ```
 
+更多 JOIN、CTE 与窗口函数示例请参见“连接与聚合”。
+
 ## 小结
 
-到此已掌握 CRUD、过滤、排序与分组。下一步前往“表设计与索引”。
+到此已掌握 CRUD、过滤、排序与分组。下一步前往“表设计与索引”，了解如何为查询选择合适的约束与索引结构。

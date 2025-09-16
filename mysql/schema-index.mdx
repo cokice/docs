@@ -4,20 +4,38 @@ description: "范式与反范式、主外键、索引类型、复合索引与 EX
 icon: "table"
 ---
 
-良好的表设计与索引策略是高性能的基础。本节涵盖主外键、常见索引类型、复合索引顺序、覆盖索引与 `EXPLAIN` 使用。
+良好的表设计与索引策略是高性能的基础。本节涵盖建模流程、主外键设计、常见索引类型、复合索引顺序、覆盖索引、虚拟列以及 `EXPLAIN` 的使用方法。
 
 ## 设计原则
 
 - 合理范式：避免重复数据与更新异常；读多写少的场景可适度反范式
 - 主键选择：推荐自增 `BIGINT` 或有序 UUID（如 ULID）；保证短且单调更友好
 - 外键：InnoDB 支持外键约束，但高并发写场景可用应用层保证一致性
+- 约束优先：尽量让数据库层面负责唯一性、非空、检查条件，实现“数据即文档”
+
+<Steps>
+  <Step title="识别实体">
+    梳理业务对象（用户、订单、库存），明确字段与关系，区分强实体/弱实体。
+  </Step>
+  <Step title="设置约束">
+    定义主键、唯一键、外键与检查约束，并对关键字段设定默认值与非空限制。
+  </Step>
+  <Step title="设计索引">
+    根据查询模式选择合适索引，尤其关注 WHERE、JOIN、ORDER BY、GROUP BY 出现的列。
+  </Step>
+  <Step title="验证执行计划">
+    通过 `EXPLAIN` 与 `EXPLAIN ANALYZE` 验证索引命中情况，必要时调整。
+  </Step>
+</Steps>
 
 ## 索引类型
 
 - B-Tree 索引：默认，支持前缀匹配
-- 唯一索引：保证唯一性
+- 唯一索引：保证唯一性，可帮助优化器确定行数
 - 复合索引：多个列组成，顺序极其重要
 - 覆盖索引：查询列完全由索引覆盖，减少回表
+- 全文索引：`FULLTEXT`，适用于文本搜索（8.0+ 支持 InnoDB）
+- 倒排哈希索引：MySQL 原生不提供，可借助外部搜索引擎（Elasticsearch、Sphinx）
 
 ```sql
 -- 唯一与普通索引
@@ -26,18 +44,42 @@ CREATE INDEX idx_products_price ON products(price);
 
 -- 复合索引顺序（高选择性列在前）
 CREATE INDEX idx_orders_user_status ON orders(user_id, status);
+
+-- 前缀索引（长字符串）
+CREATE INDEX idx_users_email_prefix ON users(email(12));
 ```
 
-## 索引生效规则（简要）
+<Tip>
+可以通过 `SELECT COUNT(DISTINCT col)` 估算列的选择性，数值越接近总行数，索引效果越好。
+</Tip>
 
-- 左前缀原则：`(a,b,c)` 的索引可用于 `a`、`a,b`、`a,b,c`
+## 索引生效规则
+
+- 左前缀原则：`(a,b,c)` 的复合索引可用于 `a`、`a,b`、`a,b,c`
 - 范围条件停止匹配：`a= ? AND b> ? AND c= ?` 中 `c` 通常无法利用
 - 函数/表达式包裹列、不同字符集/排序规则可能导致索引失效
+- 隐式类型转换会导致索引未命中，确保比较两侧类型一致
+
+```sql
+EXPLAIN SELECT * FROM orders WHERE user_id = 1 AND status = 'PAID';
+EXPLAIN SELECT * FROM orders WHERE DATE(created_at) = CURDATE(); -- 注意函数包裹
+```
+
+## 虚拟列与功能性索引
+
+```sql
+ALTER TABLE orders
+ADD COLUMN order_date DATE AS (DATE(created_at)) STORED,
+ADD INDEX idx_orders_order_date (order_date);
+```
+
+虚拟列可将复杂表达式转化为普通列（STORED）或实时计算（VIRTUAL），再配合索引提升查询性能。
 
 ## EXPLAIN 与诊断
 
 ```sql
-EXPLAIN SELECT * FROM products WHERE price BETWEEN 100 AND 500 ORDER BY price LIMIT 20;
+EXPLAIN SELECT *
+FROM products WHERE price BETWEEN 100 AND 500 ORDER BY price LIMIT 20;
 EXPLAIN ANALYZE SELECT * FROM products WHERE name LIKE 'iPhone%'; -- 8.0+
 ```
 
@@ -45,21 +87,48 @@ EXPLAIN ANALYZE SELECT * FROM products WHERE name LIKE 'iPhone%'; -- 8.0+
 
 - `type`: 访问类型（`ALL` 全表扫描、`range`、`ref`、`const` 等）
 - `key`: 实际命中的索引；`rows` 预估扫描行数；`filtered` 过滤比例
+- `extra`: 是否出现 `Using filesort`, `Using temporary`，提示排序或临时表
 
-## 覆盖索引示例
+<CodeGroup>
+  ```sql 优化器追踪
+  SET optimizer_trace="enabled=on";
+  SELECT * FROM products WHERE price BETWEEN 100 AND 500;
+  SELECT trace FROM information_schema.optimizer_trace\G
+  ```
+
+  ```sql 统计信息
+  ANALYZE TABLE products;
+  SHOW INDEX FROM products;
+  ```
+</CodeGroup>
+
+## 索引维护与监控
+
+- 定期使用 `ANALYZE TABLE` 更新统计信息
+- `SHOW INDEX FROM tbl` 查看索引使用情况
+- `performance_schema.table_io_waits_summary_by_table`、`sys.schema_unused_indexes` 可识别未使用索引
+- MySQL 8.0 支持 `ALTER TABLE ... ADD INDEX ... INVISIBLE` 隐藏索引做灰度验证
 
 ```sql
--- 只取 price 与 id，走覆盖索引
-CREATE INDEX idx_products_price_id ON products(price, id);
-SELECT id, price FROM products WHERE price BETWEEN 100 AND 500 ORDER BY price;
+ALTER TABLE orders ADD INDEX idx_orders_status (status) INVISIBLE;
+-- 验证后再切换
+ALTER TABLE orders ALTER INDEX idx_orders_status VISIBLE;
 ```
 
 ## 常见陷阱
 
 - 过多索引影响写入与空间；定期清理冗余索引
-- 低选择性列（如性别、状态）单列索引价值有限
+- 低选择性列（如性别、状态）单列索引价值有限，可与其他列组合
 - 混用不同字符集/排序规则导致比较异常
+- 缺乏主键会导致 InnoDB 自动维护隐藏主键，影响复制性能
+
+## 设计检查清单
+
+- 表是否有主键？是否为自增或业务无重复的键？
+- 外键约束是否会影响写入性能？是否需要级联？
+- 每个高频查询是否有合适索引支撑？`EXPLAIN` 是否命中预期？
+- 是否存在宽表或过长字段，是否需要拆分或归档策略？
 
 ## 小结
 
-理解索引工作方式与 `EXPLAIN`，是优化查询的核心。下一步前往“连接与聚合”。
+理解索引工作方式与 `EXPLAIN`，是优化查询的核心。下一步前往“连接与聚合”，练习多表查询与分析技巧。

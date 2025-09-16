@@ -4,24 +4,55 @@ description: "mysqldump、一致性快照、二进制日志增量与点时间恢
 icon: "rotate-ccw"
 ---
 
-备份分为逻辑备份（`mysqldump`）与物理备份（拷贝数据文件/专业工具）。本节以逻辑备份为主，介绍一致性快照与增量恢复思路。
+备份分为逻辑备份（`mysqldump`）与物理备份（拷贝数据文件/专业工具）。本节以逻辑备份为主，介绍一致性快照、增量恢复思路，并补充常见的自动化与验证方法。
+
+## 备份策略概览
+
+- **全量备份**：周期性生成完整数据副本（每日/每周）
+- **增量备份**：依赖二进制日志（binlog）或物理增量工具填补两次全量之间的数据
+- **异地存储**：将备份推送至对象存储或异地机房，防止单点故障
+- **定期演练**：验证恢复流程与 RPO/RTO 是否符合预期
+
+<Tip>
+制定备份策略时先明确恢复目标：可接受的数据丢失时间（RPO）与恢复所需时长（RTO）。
+</Tip>
 
 ## 全量逻辑备份（在线）
 
 ```bash
 mysqldump -h 127.0.0.1 -P 3306 -u root -p \
   --single-transaction --routines --triggers --events \
+  --master-data=2 \
   --databases shop > shop_$(date +%F).sql
 ```
 
 - `--single-transaction`：InnoDB 在线一致性快照（避免锁表）
 - `--routines/--triggers/--events`：包含对象
+- `--master-data=2`：在备份开头记录二进制日志位点，便于增量恢复
+- 可配合 `--set-gtid-purged=ON`（GTID 模式）
+
+<Note>
+对于大库，可使用 `mysqlpump`（并行导出）或 Percona XtraBackup（物理热备）。
+</Note>
+
+## 压缩与拆分
+
+```bash
+mysqldump ... | gzip > shop_$(date +%F).sql.gz
+split -b 2G shop_2024-01-10.sql.gz shop_2024-01-10.sql.gz.part-
+```
+
+压缩可显著减少存储，拆分便于上传对象存储。
 
 ## 恢复
 
 ```bash
 mysql -h 127.0.0.1 -P 3306 -u root -p < shop_2024-01-10.sql
+# 压缩文件
+gunzip < shop_2024-01-10.sql.gz | mysql -u root -p
 ```
+
+恢复前可先在空库中执行 `DROP DATABASE shop; CREATE DATABASE shop;` 确保干净状态。
 
 ## 二进制日志与增量
 
@@ -36,9 +67,46 @@ mysqlbinlog --start-datetime="2024-01-10 09:00:00" \
   /var/lib/mysql/binlog.000123 | mysql -u root -p
 ```
 
+也可使用 `--start-position`/`--stop-position` 精确控制回放范围。
+
 <Warning>
-PITR 对时间精度与服务器时区敏感；强烈建议定期演练恢复流程。
+PITR 对时间精度与服务器时区敏感；强烈建议定期演练恢复流程，并记录每次备份对应的 binlog 位点。
 </Warning>
+
+## 物理备份概述
+
+- **Percona XtraBackup**：开源热备工具，支持增量备份与速度快
+- **MySQL Enterprise Backup**：官方商业版本，提供加密与压缩
+- **文件系统快照**：借助 LVM、ZFS 或云盘快照结合 `FLUSH TABLES WITH READ LOCK`
+
+物理备份速度快、可恢复到完全一致的数据目录，适合大规模数据量场景。
+
+## 校验与演练
+
+```bash
+# 在 Docker 中恢复到临时实例校验
+cat shop_2024-01-10.sql | docker exec -i mysql-restore mysql -u root -psecret
+
+# 对比行数
+mysql -e "SELECT table_name, table_rows FROM information_schema.tables WHERE table_schema='shop';"
+```
+
+- 校验备份文件完整性：`mysql --force < backup.sql` 是否失败
+- 使用 `pt-table-checksum` 或 `CHECKSUM TABLE` 校验主备一致性
+
+## 自动化建议
+
+```bash
+# Linux 定时任务示例
+0 3 * * * /usr/local/bin/backup_shop.sh >> /var/log/mysql/backup.log 2>&1
+```
+
+备份脚本需包含：
+
+- 设置 `set -euo pipefail` 保证异常立刻退出
+- 生成日期命名的备份文件
+- 上传或同步至对象存储（AWS S3、阿里云 OSS 等）
+- 发送备份结果通知（邮件/IM）
 
 ## 导入导出片段
 
@@ -53,12 +121,15 @@ mysqldump -t shop > data.sql
 mysqldump shop users products > shop_users_products.sql
 ```
 
-## 常见问题
+若需导出 CSV，可使用 `SELECT ... INTO OUTFILE` 并指定分隔符。
+
+## 常见问题与排查
 
 - 锁表：MyISAM 或显式锁可能导致备份等待；建议使用 InnoDB + `--single-transaction`
 - 大文件：使用管道压缩 `| gzip > backup.sql.gz`
 - 字符集：注意 `--default-character-set=utf8mb4`
+- 权限：备份账号需具备 `SELECT`, `LOCK TABLES`, `SHOW VIEW`, `TRIGGER` 权限
 
 ## 小结
 
-建立“全量 + binlog 增量”的策略并定期演练，才能保证可靠恢复。
+建立“全量 + binlog 增量”的策略并定期演练，才能保证可靠恢复。备份脚本、日志与校验同样重要，请将备份操作纳入日常运维流程。

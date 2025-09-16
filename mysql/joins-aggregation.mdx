@@ -4,9 +4,43 @@ description: "INNER/LEFT/RIGHT JOIN、子查询、CTE、窗口函数与常见用
 icon: "git-merge"
 ---
 
-本节介绍多表连接、聚合分析与更进阶的查询技巧（CTE 与窗口函数）。
+本节介绍多表连接、聚合分析与进阶查询技巧（CTE、窗口函数、集合运算）。掌握这些内容可以灵活编写复杂报表与业务查询。
 
-## 多表连接
+## JOIN 类型速览
+
+<Tabs>
+  <Tab title="INNER">
+    返回两张表匹配行，常用于获取具备关联记录的数据。
+
+    ```sql
+    SELECT u.id, u.name, o.id AS order_id
+    FROM users u
+    INNER JOIN orders o ON o.user_id = u.id;
+    ```
+  </Tab>
+  <Tab title="LEFT">
+    保留左表全部行，右表无匹配时结果为 `NULL`，适合统计缺失数据。
+
+    ```sql
+    SELECT u.id, u.name, COUNT(o.id) AS order_cnt
+    FROM users u
+    LEFT JOIN orders o ON o.user_id = u.id
+    GROUP BY u.id, u.name;
+    ```
+  </Tab>
+  <Tab title="RIGHT">
+    与 LEFT 相反，实际业务中较少使用，可通过交换左右表改写。
+  </Tab>
+  <Tab title="CROSS">
+    生成笛卡尔积，谨慎使用，可用于生成日期/序列。
+  </Tab>
+</Tabs>
+
+<Tip>
+连接条件 (`ON`) 与过滤条件 (`WHERE`) 分开写能提升可读性，避免误把过滤逻辑放入 JOIN 造成结果差异。
+</Tip>
+
+## 多表连接示例
 
 ```sql
 -- 用户最近一笔订单金额
@@ -43,7 +77,11 @@ SELECT * FROM users WHERE id IN (
 );
 ```
 
-## CTE（WITH）与可读性
+<Note>
+`EXISTS` 通常在子查询返回大量行时更高效，优化器可在找到首行后提前终止。
+</Note>
+
+## 公用表表达式（CTE）
 
 ```sql
 WITH recent_orders AS (
@@ -55,18 +93,37 @@ SELECT user_id, id AS recent_order_id, total
 FROM recent_orders WHERE rn = 1;
 ```
 
-## 窗口函数（8.0+）
+### 递归 CTE（8.0+）
 
 ```sql
--- 计算每个用户的累计消费
-SELECT user_id,
-       id AS order_id,
-       total,
-       SUM(total) OVER (PARTITION BY user_id ORDER BY created_at) AS running_total
-FROM orders;
+WITH RECURSIVE date_span AS (
+  SELECT DATE('2024-01-01') AS d
+  UNION ALL
+  SELECT DATE_ADD(d, INTERVAL 1 DAY)
+  FROM date_span
+  WHERE d < '2024-01-07'
+)
+SELECT d FROM date_span;
 ```
 
-## ROLLUP（小计/合计）
+递归 CTE 常用于生成时间序列或处理树形结构。记得通过 `SET cte_max_recursion_depth = 1000;` 控制深度。
+
+## 聚合与分组
+
+```sql
+SELECT DATE(created_at) AS d, SUM(total) AS revenue
+FROM orders
+GROUP BY d
+ORDER BY d;
+
+SELECT status, COUNT(*) AS cnt, SUM(total) AS total_amount
+FROM orders
+GROUP BY status
+HAVING SUM(total) > 10000;
+```
+
+- `GROUP BY` 后可使用 `HAVING` 对聚合结果过滤
+- `GROUPING SETS`、`ROLLUP`、`CUBE` 可生成多层级统计（MySQL 支持 `ROLLUP`）
 
 ```sql
 SELECT user_id, status, SUM(total) AS amount
@@ -74,6 +131,54 @@ FROM orders
 GROUP BY user_id, status WITH ROLLUP;
 ```
 
+## 窗口函数（8.0+）
+
+```sql
+-- 计算每个用户的累计消费
+SELECT user_id,
+       id AS order_id,
+       total,
+       SUM(total) OVER (PARTITION BY user_id ORDER BY created_at) AS running_total,
+       ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn
+FROM orders;
+```
+
+常见窗口函数：`ROW_NUMBER`、`RANK`、`DENSE_RANK`、`LAG`、`LEAD`、`NTILE`、`SUM/AVG` OVER。
+
+<Tip>
+窗口函数不会折叠行，适合在不改变行数的情况下追加分析字段。
+</Tip>
+
+## 集合运算
+
+```sql
+-- UNION 自动去重，UNION ALL 保留重复
+SELECT email FROM newsletter
+UNION
+SELECT email FROM users;
+
+-- INTERSECT/EXCEPT 可使用 INNER JOIN/LEFT JOIN + WHERE 模拟
+```
+
+## 条件聚合与透视
+
+```sql
+SELECT
+  DATE(created_at) AS d,
+  SUM(CASE WHEN status = 'PAID' THEN total ELSE 0 END) AS paid_amount,
+  SUM(CASE WHEN status = 'CANCELLED' THEN total ELSE 0 END) AS cancelled_amount
+FROM orders
+GROUP BY DATE(created_at);
+```
+
+这类写法常用于生成运营看板或 KPI 统计，可结合窗口函数实现同比环比计算。
+
+## 性能提示
+
+- `EXPLAIN` 验证连接顺序与索引命中，必要时使用 `STRAIGHT_JOIN` 强制顺序
+- 避免在 JOIN 条件中对列进行函数转换
+- 对聚合查询可考虑建立覆盖索引或使用物化视图（手动维护）
+
 ## 小结
 
-掌握连接、子查询、CTE 与窗口函数能显著提升查询表达力。下一步前往“事务与锁”。
+掌握连接、子查询、CTE 与窗口函数能显著提升查询表达力。下一步前往“事务与锁”，理解并发控制与一致性处理。
